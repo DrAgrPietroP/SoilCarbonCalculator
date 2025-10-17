@@ -23,10 +23,14 @@ if anno_selezionato not in st.session_state["annate"]:
     st.session_state["annate"][anno_selezionato] = {}
 
 # -------------------------------
-# 2️⃣ Selezione terreno
-st.header("2️⃣ Seleziona o aggiungi terreno")
+# 2️⃣ Selezione terreno (con superficie)
+st.header("2️⃣ Seleziona o aggiungi terreno con superficie")
 terreni_anno = st.session_state["annate"][anno_selezionato]
+
+# Input nuovo terreno + superficie
 nuovo_terreno = st.text_input("Nome nuovo terreno")
+superficie_input = st.number_input("Superficie del terreno (ha)", min_value=0.1, max_value=10000.0, value=1.0, step=0.1)
+
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
     aggiungi_terreno = st.button("+")
@@ -37,8 +41,9 @@ if aggiungi_terreno:
     elif nuovo_terreno in terreni_anno:
         st.warning("⚠️ Il terreno esiste già!")
     else:
-        terreni_anno[nuovo_terreno] = []
-        st.success(f"✅ Terreno '{nuovo_terreno}' aggiunto.")
+        # Salva non solo il nome ma anche la superficie e una lista di colture
+        terreni_anno[nuovo_terreno] = {"superficie": superficie_input, "colture": []}
+        st.success(f"✅ Terreno '{nuovo_terreno}' aggiunto con superficie {superficie_input:.2f} ha.")
 
 terreno_selezionato = None
 if terreni_anno:
@@ -96,11 +101,13 @@ if terreno_selezionato:
 
     # pulsante salva
     if st.button("Salva colture"):
-        nuove_colture = [c for c in st.session_state["colture_form"] if c["resa"] > 0 and c["coltura"] != "Nessuna"]
+        nuove_colture = [c for c in st.session_state["colture_form"]
+                         if c["resa"] > 0 and c["coltura"] != "Nessuna"]
         if not nuove_colture:
             st.error("⚠️ Errore: inserisci almeno una coltura valida con resa > 0")
         else:
-            terreni_anno[terreno_selezionato].extend(nuove_colture)
+            # Aggiungi alla lista delle colture nel terreno selezionato
+            terreni_anno[terreno_selezionato]["colture"].extend(nuove_colture)
             st.success(f"✅ {len(nuove_colture)} colture salvate per il terreno '{terreno_selezionato}'")
             st.session_state["colture_form"] = []
 
@@ -141,26 +148,29 @@ c_percent_table = {
 }
 
 # -------------------------------
-# 5️⃣ Calcolo SOC/CO2
+# 5️⃣ Calcolo SOC/CO2 e Totale per terreno
 st.header("4️⃣ Risultati stoccaggio CO₂")
-if terreno_selezionato and terreni_anno[terreno_selezionato]:
+if terreno_selezionato and terreni_anno[terreno_selezionato].get("colture"):
+    superficie = terreni_anno[terreno_selezionato]["superficie"]
     delta_soc_tot = 0
     delta_co2_tot = 0
-    for c in terreni_anno[terreno_selezionato]:
+    for c in terreni_anno[terreno_selezionato]["colture"]:
         if c["coltura"] not in hi_table:
-            st.warning(f"⚠️ Coltura '{c['coltura']}' non presente in tabella, saltata.")
+            st.warning(f"⚠️ Coltura '{c['coltura']}' non presente in tabella, ignorata.")
             continue
         hi = hi_table[c["coltura"]]
         c_percent = c_percent_table[c["coltura"]]
         biomassa_totale = c["resa"] / hi if hi > 0 else 0
         residui = biomassa_totale - c["resa"]
         c_residui = residui * c_percent
-        delta_soc = c_residui  # senza decay
+        delta_soc = c_residui  # senza decadimento
         delta_co2 = delta_soc * (44 / 12)
         delta_soc_tot += delta_soc
         delta_co2_tot += delta_co2
         st.write(f"**{c['coltura']}:** ΔSOC={delta_soc:.2f} t C/ha, ΔCO₂={delta_co2:.2f} t CO₂/ha")
-    st.write(f"### 🌾 Totale incremento per il terreno: **{delta_co2_tot:.2f} t CO₂/ha**")
+    # calcolo totale per il terreno
+    totale_CO2_terreno = delta_co2_tot * superficie
+    st.write(f"### 🌾 Totale incremento per il terreno ({superficie:.2f} ha): **{totale_CO2_terreno:.2f} t CO₂**")
 else:
-    st.info("ℹ️ Inserisci almeno una coltura per visualizzare i risultati.")
+    st.info("ℹ️ Inserisci colture valide per visualizzare i risultati.")
 
