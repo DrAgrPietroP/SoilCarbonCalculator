@@ -124,3 +124,4 @@ if st.session_state['terreni']:
             st.write(f"**Totale incremento per il terreno ({superficie_terreno:.2f} ha):** {delta_co2_tot * superficie_terreno:.2f} t CO₂")
 else:
     st.info("Aggiungi prima almeno un terreno per continuare.")
+
