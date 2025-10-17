@@ -25,7 +25,7 @@ folium.TileLayer('Esri.WorldImagery', name='Satellite').add_to(m)
 # Layer di base OpenStreetMap
 folium.TileLayer('OpenStreetMap', name='Mappa stradale').add_to(m)
 
-# Abilita controllo layer
+# Controllo layer
 folium.LayerControl().add_to(m)
 
 # Strumenti di disegno (poligono)
@@ -66,38 +66,49 @@ if lat and lon:
     st.header("3️⃣ Inserisci l'area del campo (ha)")
     area = st.number_input("Area (ha)", min_value=0.1, max_value=1000.0, value=field_area_ha, step=0.1)
 
-    # Richiesta dati da SoilGrids
+    # -------------------------------
+    # Richiesta dati da SoilGrids con gestione errori
     try:
         url = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property=ocd&property=bdod&depth=0-30cm"
         response = requests.get(url)
         data = response.json()
 
-        # Carbonio organico (%)
-        c_percent = data["properties"]["ocd"]["depths"][0]["values"]["mean"]
-        # Bulk density (g/cm³)
-        bd = data["properties"]["bdod"]["depths"][0]["values"]["mean"]
+        if "properties" in data:
+            c_percent = data["properties"]["ocd"]["depths"][0]["values"]["mean"]
+            bd = data["properties"]["bdod"]["depths"][0]["values"]["mean"]
+        else:
+            st.warning("⚠️ SoilGrids non ha restituito dati per queste coordinate. Verranno usati valori medi di riferimento.")
+            # valori medi di fallback
+            c_percent = 1.2  # %
+            bd = 1.3        # g/cm³
 
-        st.subheader("Valori stimati automaticamente da SoilGrids (0-30 cm)")
-        st.write(f"**Carbonio organico stimato:** {c_percent:.2f} %")
-        st.write(f"**Densità apparente stimata:** {bd:.2f} g/cm³")
-
-        # Calcolo stock C e CO2
-        depth = 30  # cm
-        stock_C = (c_percent / 100) * bd * depth * 10  # t C/ha
-        stock_CO2 = stock_C * (44 / 12)  # t CO2eq/ha
-        total_CO2 = stock_CO2 * area
-
-        st.divider()
-        st.subheader("📊 Risultati")
-        st.write(f"**Stock di carbonio (C):** {stock_C:.2f} t C/ha")
-        st.write(f"**Stock di CO₂ equivalente:** {stock_CO2:.2f} t CO₂/ha")
-        st.write(f"**Totale per l'area:** {total_CO2:.2f} t CO₂")
-
-        st.info("💡 Puoi modificare i valori stimati manualmente se hai dati reali.")
     except Exception as e:
         st.error(f"Errore nel recupero dati SoilGrids: {e}")
+        # valori medi di fallback
+        c_percent = 1.2
+        bd = 1.3
+
+    # Visualizza valori utilizzati
+    st.subheader("Valori utilizzati per il calcolo (0-30 cm)")
+    st.write(f"**Carbonio organico:** {c_percent:.2f} %")
+    st.write(f"**Densità apparente:** {bd:.2f} g/cm³")
+
+    # Calcolo stock C e CO2
+    depth = 30  # cm
+    stock_C = (c_percent / 100) * bd * depth * 10  # t C/ha
+    stock_CO2 = stock_C * (44 / 12)  # t CO2eq/ha
+    total_CO2 = stock_CO2 * area
+
+    st.divider()
+    st.subheader("📊 Risultati")
+    st.write(f"**Stock di carbonio (C):** {stock_C:.2f} t C/ha")
+    st.write(f"**Stock di CO₂ equivalente:** {stock_CO2:.2f} t CO₂/ha")
+    st.write(f"**Totale per l'area:** {total_CO2:.2f} t CO₂")
+
+    st.info("💡 Puoi modificare i valori stimati manualmente se hai dati reali.")
+
 else:
     st.info("Clicca sulla mappa o disegna il campo per iniziare.")
 
 st.markdown("---")
-st.caption("Versione 4.0 - Mappa satellitare ESRI, disegno del campo, stima automatica da SoilGrids, tessitura inserita manualmente.")
+st.caption("Versione 4.0 - Mappa satellitare ESRI, disegno del campo, stima automatica da SoilGrids, tessitura inserita manualmente, gestione errori.")
