@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import datetime
 
 st.set_page_config(page_title="SoilCarbonCalculator Terreni", page_icon="🌱", layout="wide")
 st.title("🌱 SoilCarbonCalculator - Calcolo stoccaggio carbonio")
@@ -12,9 +13,11 @@ if "colture_form" not in st.session_state:
     st.session_state["colture_form"] = []
 
 # -------------------------------
-# 1️⃣ Selezione o aggiunta anno
-st.header("1️⃣ Seleziona o aggiungi anno")
-anno_selezionato = st.number_input("Anno", min_value=2000, max_value=2100, value=2025, step=1)
+# 1️⃣ Selezione anno
+st.header("1️⃣ Seleziona anno")
+anno_corrente = datetime.now().year
+anni_possibili = list(range(1950, anno_corrente + 1))
+anno_selezionato = st.selectbox("Anno", anni_possibili)
 
 if anno_selezionato not in st.session_state["annate"]:
     st.session_state["annate"][anno_selezionato] = {}
@@ -48,24 +51,29 @@ if terreno_selezionato:
 
     # inizializza form se vuoto
     if len(st.session_state["colture_form"]) < 2:
-        st.session_state["colture_form"] = [{"coltura": "", "resa": 0.0} for _ in range(2)]
+        st.session_state["colture_form"] = [{"coltura": "Nessuna", "resa": 0.0} for _ in range(2)]
 
     # visualizza form esistente
     for i, entry in enumerate(st.session_state["colture_form"]):
         st.subheader(f"Coltura {i+1}")
-        entry["coltura"] = st.selectbox(f"Seleziona coltura {i+1}", ["Mais granella", "Frumento", "Orzo", "Fieno/erba", "Soia"], key=f"coltura_{i}")
-        entry["resa"] = st.number_input(f"Resa raccolta (t/ha) {i+1}", min_value=0.0, max_value=50.0, value=10.0, step=0.1, key=f"resa_{i}")
+        entry["coltura"] = st.selectbox(
+            f"Seleziona coltura {i+1}",
+            ["Nessuna", "Mais granella", "Frumento", "Orzo", "Fieno/erba", "Soia"],
+            index=0 if entry["coltura"] == "Nessuna" else ["Nessuna", "Mais granella", "Frumento", "Orzo", "Fieno/erba", "Soia"].index(entry["coltura"]),
+            key=f"coltura_{i}"
+        )
+        entry["resa"] = st.number_input(f"Resa raccolta (t/ha) {i+1}", min_value=0.0, max_value=50.0, value=entry["resa"], step=0.1, key=f"resa_{i}")
 
     # pulsante aggiungi nuova coltura
     if st.button("Aggiungi coltura"):
-        st.session_state["colture_form"].append({"coltura": "", "resa": 0.0})
+        st.session_state["colture_form"].append({"coltura": "Nessuna", "resa": 0.0})
 
     # pulsante salva
     if st.button("Salva colture"):
-        # filtra le colture con resa > 0
-        nuove_colture = [c for c in st.session_state["colture_form"] if c["resa"] > 0]
+        # filtra le colture con resa > 0 e coltura != Nessuna
+        nuove_colture = [c for c in st.session_state["colture_form"] if c["resa"] > 0 and c["coltura"] != "Nessuna"]
         if not nuove_colture:
-            st.error("Errore: inserisci almeno una coltura con resa > 0")
+            st.error("Errore: inserisci almeno una coltura valida con resa > 0")
         else:
             terreni_anno[terreno_selezionato].extend(nuove_colture)
             st.success(f"{len(nuove_colture)} colture salvate per il terreno '{terreno_selezionato}'")
