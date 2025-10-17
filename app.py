@@ -1,71 +1,52 @@
 import streamlit as st
 
-# -------------------------------
-# SoilCarbonCalculator Annual ΔSOC
-# -------------------------------
+st.set_page_config(page_title="SoilCarbonCalculator Terreni", page_icon="🌱", layout="wide")
+st.title("🌱 SoilCarbonCalculator - Gestione terreni e stoccaggio annuo")
 
-st.set_page_config(page_title="SoilCarbonCalculator ΔSOC", page_icon="🌱", layout="wide")
-st.title("🌱 SoilCarbonCalculator - Stoccaggio annuo di carbonio")
+# -------------------------------
+# Inizializzazione session_state
+if "terreni" not in st.session_state:
+    st.session_state['terreni'] = {}
 
-st.markdown(
-    "Inserisci la coltura, la resa raccolta, la tessitura del suolo e l'area del campo. "
-    "L'app calcolerà automaticamente l'incremento annuo di carbonio e CO₂."
+# -------------------------------
+# 1️⃣ Selezione o aggiunta terreno
+st.header("1️⃣ Seleziona o aggiungi terreno")
+nuovo_terreno = st.text_input("Nome nuovo terreno")
+superficie = st.number_input("Superficie (ha)", min_value=0.1, max_value=1000.0, value=1.0, step=0.1)
+
+if st.button("Aggiungi terreno"):
+    if nuovo_terreno in st.session_state['terreni']:
+        st.warning("Il terreno esiste già!")
+    else:
+        st.session_state['terreni'][nuovo_terreno] = {"superficie": superficie, "annate": {}}
+        st.success(f"Terreno '{nuovo_terreno}' aggiunto.")
+
+# Menu terreni esistenti
+terreno_selezionato = st.selectbox("Terreno", list(st.session_state['terreni'].keys()))
+
+# -------------------------------
+# 2️⃣ Selezione anno
+st.header("2️⃣ Seleziona anno")
+anni_disponibili = list(st.session_state['terreni'][terreno_selezionato]["annate"].keys())
+anno_nuovo = st.number_input("Nuovo anno", min_value=2000, max_value=2100, value=2025, step=1)
+
+if st.button("Aggiungi anno"):
+    if anno_nuovo in st.session_state['terreni'][terreno_selezionato]["annate"]:
+        st.warning("Anno già presente!")
+    else:
+        st.session_state['terreni'][terreno_selezionato]["annate"][anno_nuovo] = []
+        st.success(f"Anno {anno_nuovo} aggiunto al terreno '{terreno_selezionato}'.")
+
+# Selezione anno esistente
+anno_selezionato = st.selectbox(
+    "Anno da modificare",
+    list(st.session_state['terreni'][terreno_selezionato]["annate"].keys())
 )
 
 # -------------------------------
-# Input utente
-st.header("1️⃣ Inserisci i dati agronomici")
+# 3️⃣ Inserimento colture per l'anno
+st.header(f"3️⃣ Inserisci colture per l'anno {anno_selezionato}")
+
 coltura = st.selectbox("Coltura", ["Mais granella", "Frumento", "Orzo", "Fieno/erba", "Soia"])
-resa = st.number_input("Resa raccolta (t/ha)", min_value=0.1, max_value=50.0, value=10.0, step=0.1)
-tessitura = st.selectbox("Tessitura del suolo", ["Sabbioso", "Franco sabbioso", "Franco limoso", "Franco argilloso", "Argilloso"])
-area = st.number_input("Area del campo (ha)", min_value=0.1, max_value=1000.0, value=1.0, step=0.1)
+resa = st.number_input("Resa raccolta_
 
-# -------------------------------
-# Tabelle standard HI e %C
-hi_table = {
-    "Mais granella": 0.50,
-    "Frumento": 0.45,
-    "Orzo": 0.45,
-    "Fieno/erba": 0.50,
-    "Soia": 0.40
-}
-
-c_percent_table = {
-    "Mais granella": 0.45,
-    "Frumento": 0.45,
-    "Orzo": 0.45,
-    "Fieno/erba": 0.40,
-    "Soia": 0.45
-}
-
-# Frazione decomposta subito in base alla tessitura
-decay_table = {
-    "Sabbioso": 0.30,
-    "Franco sabbioso": 0.25,
-    "Franco limoso": 0.20,
-    "Franco argilloso": 0.15,
-    "Argilloso": 0.10
-}
-
-# -------------------------------
-# Calcolo biomassa totale e residui
-hi = hi_table[coltura]
-c_percent = c_percent_table[coltura]
-decay = decay_table[tessitura]
-
-biomassa_totale = resa / hi  # t/ha
-residui = biomassa_totale - resa
-c_residui = residui * c_percent
-delta_soc = c_residui * (1 - decay)
-delta_co2 = delta_soc * (44 / 12)
-total_co2 = delta_co2 * area
-
-# -------------------------------
-# Risultati
-st.header("2️⃣ Risultati")
-st.write(f"**Biomassa totale stimata:** {biomassa_totale:.2f} t/ha")
-st.write(f"**Residui lasciati nel terreno:** {residui:.2f} t/ha")
-st.write(f"**Carbonio nei residui:** {c_residui:.2f} t C/ha")
-st.write(f"**Incremento annuo stimato SOC:** {delta_soc:.2f} t C/ha")
-st.write(f"**Incremento annuo stimato CO₂:** {delta_co2:.2f} t CO₂/ha")
-st.write(f"**Incremento annuo totale per l'area:** {total_co2:.2f} t CO₂")
