@@ -1,114 +1,71 @@
 import streamlit as st
-from streamlit_folium import st_folium
-import folium
-from folium import plugins
-import requests
 
 # -------------------------------
-# SoilCarbonCalculator v4
-# Web app con mappa satellitare e stima da SoilGrids
+# SoilCarbonCalculator Annual ΔSOC
 # -------------------------------
 
-st.set_page_config(page_title="SoilCarbonCalculator v4", page_icon="🌱", layout="wide")
-st.title("🌱 SoilCarbonCalculator v4")
+st.set_page_config(page_title="SoilCarbonCalculator ΔSOC", page_icon="🌱", layout="wide")
+st.title("🌱 SoilCarbonCalculator - Stoccaggio annuo di carbonio")
+
 st.markdown(
-    "Seleziona il tuo campo sulla mappa e inserisci la tessitura del suolo. "
-    "I valori di carbonio e densità apparente saranno stimati automaticamente da SoilGrids."
+    "Inserisci la coltura, la resa raccolta, la tessitura del suolo e l'area del campo. "
+    "L'app calcolerà automaticamente l'incremento annuo di carbonio e CO₂."
 )
 
 # -------------------------------
-# Mappa iniziale centrata su Italia
-m = folium.Map(location=[42.5, 12.5], zoom_start=6)
-
-# Layer satellitare ESRI
-folium.TileLayer('Esri.WorldImagery', name='Satellite').add_to(m)
-# Layer di base OpenStreetMap
-folium.TileLayer('OpenStreetMap', name='Mappa stradale').add_to(m)
-
-# Controllo layer
-folium.LayerControl().add_to(m)
-
-# Strumenti di disegno (poligono)
-draw = plugins.Draw(export=True)
-draw.add_to(m)
-
-# Mostra mappa in Streamlit
-map_data = st_folium(m, width=800, height=500, returned_objects=["all_drawings", "last_clicked"])
+# Input utente
+st.header("1️⃣ Inserisci i dati agronomici")
+coltura = st.selectbox("Coltura", ["Mais granella", "Frumento", "Orzo", "Fieno/erba", "Soia"])
+resa = st.number_input("Resa raccolta (t/ha)", min_value=0.1, max_value=50.0, value=10.0, step=0.1)
+tessitura = st.selectbox("Tessitura del suolo", ["Sabbioso", "Franco sabbioso", "Franco limoso", "Franco argilloso", "Argilloso"])
+area = st.number_input("Area del campo (ha)", min_value=0.1, max_value=1000.0, value=1.0, step=0.1)
 
 # -------------------------------
-# Ottieni coordinate e area
-field_area_ha = 1.0
-lat = lon = None
+# Tabelle standard HI e %C
+hi_table = {
+    "Mais granella": 0.50,
+    "Frumento": 0.45,
+    "Orzo": 0.45,
+    "Fieno/erba": 0.50,
+    "Soia": 0.40
+}
 
-if map_data:
-    polygons = map_data.get("all_drawings", [])
-    if polygons:
-        st.success("📍 Poligono del campo selezionato.")
-        coords = polygons[0]['geometry']['coordinates'][0]
-        lat = sum([pt[1] for pt in coords]) / len(coords)
-        lon = sum([pt[0] for pt in coords]) / len(coords)
-        # Stima area se disponibile, altrimenti 1 ha
-        field_area_ha = polygons[0]['properties'].get('area_ha', 1.0)
-    elif map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lon = map_data["last_clicked"]["lng"]
-        st.success(f"📍 Punto selezionato: lat {lat:.5f}, lon {lon:.5f}")
+c_percent_table = {
+    "Mais granella": 0.45,
+    "Frumento": 0.45,
+    "Orzo": 0.45,
+    "Fieno/erba": 0.40,
+    "Soia": 0.45
+}
+
+# Frazione decomposta subito in base alla tessitura
+decay_table = {
+    "Sabbioso": 0.30,
+    "Franco sabbioso": 0.25,
+    "Franco limoso": 0.20,
+    "Franco argilloso": 0.15,
+    "Argilloso": 0.10
+}
 
 # -------------------------------
-# Inserimento tessitura e calcolo
-if lat and lon:
-    st.header("2️⃣ Inserisci la tessitura del suolo")
-    tessitura = st.selectbox(
-        "Tessitura del suolo",
-        ["Sabbioso", "Franco sabbioso", "Franco limoso", "Franco argilloso", "Argilloso"]
-    )
+# Calcolo biomassa totale e residui
+hi = hi_table[coltura]
+c_percent = c_percent_table[coltura]
+decay = decay_table[tessitura]
 
-    st.header("3️⃣ Inserisci l'area del campo (ha)")
-    area = st.number_input("Area (ha)", min_value=0.1, max_value=1000.0, value=field_area_ha, step=0.1)
+biomassa_totale = resa / hi  # t/ha
+residui = biomassa_totale - resa
+c_residui = residui * c_percent
+delta_soc = c_residui * (1 - decay)
+delta_co2 = delta_soc * (44 / 12)
+total_co2 = delta_co2 * area
 
-    # -------------------------------
-    # Richiesta dati da SoilGrids con gestione errori
-    try:
-        url = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property=ocd&property=bdod&depth=0-30cm"
-        response = requests.get(url)
-        data = response.json()
-
-        if "properties" in data:
-            c_percent = data["properties"]["ocd"]["depths"][0]["values"]["mean"]
-            bd = data["properties"]["bdod"]["depths"][0]["values"]["mean"]
-        else:
-            st.warning("⚠️ SoilGrids non ha restituito dati per queste coordinate. Verranno usati valori medi di riferimento.")
-            # valori medi di fallback
-            c_percent = 1.2  # %
-            bd = 1.3        # g/cm³
-
-    except Exception as e:
-        st.error(f"Errore nel recupero dati SoilGrids: {e}")
-        # valori medi di fallback
-        c_percent = 1.2
-        bd = 1.3
-
-    # Visualizza valori utilizzati
-    st.subheader("Valori utilizzati per il calcolo (0-30 cm)")
-    st.write(f"**Carbonio organico:** {c_percent:.2f} %")
-    st.write(f"**Densità apparente:** {bd:.2f} g/cm³")
-
-    # Calcolo stock C e CO2
-    depth = 30  # cm
-    stock_C = (c_percent / 100) * bd * depth * 10  # t C/ha
-    stock_CO2 = stock_C * (44 / 12)  # t CO2eq/ha
-    total_CO2 = stock_CO2 * area
-
-    st.divider()
-    st.subheader("📊 Risultati")
-    st.write(f"**Stock di carbonio (C):** {stock_C:.2f} t C/ha")
-    st.write(f"**Stock di CO₂ equivalente:** {stock_CO2:.2f} t CO₂/ha")
-    st.write(f"**Totale per l'area:** {total_CO2:.2f} t CO₂")
-
-    st.info("💡 Puoi modificare i valori stimati manualmente se hai dati reali.")
-
-else:
-    st.info("Clicca sulla mappa o disegna il campo per iniziare.")
-
-st.markdown("---")
-st.caption("Versione 4.0 - Mappa satellitare ESRI, disegno del campo, stima automatica da SoilGrids, tessitura inserita manualmente, gestione errori.")
+# -------------------------------
+# Risultati
+st.header("2️⃣ Risultati")
+st.write(f"**Biomassa totale stimata:** {biomassa_totale:.2f} t/ha")
+st.write(f"**Residui lasciati nel terreno:** {residui:.2f} t/ha")
+st.write(f"**Carbonio nei residui:** {c_residui:.2f} t C/ha")
+st.write(f"**Incremento annuo stimato SOC:** {delta_soc:.2f} t C/ha")
+st.write(f"**Incremento annuo stimato CO₂:** {delta_co2:.2f} t CO₂/ha")
+st.write(f"**Incremento annuo totale per l'area:** {total_co2:.2f} t CO₂")
