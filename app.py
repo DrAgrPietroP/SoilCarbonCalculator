@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 import folium
 import requests
-from folium import features
+from folium import plugins
 
 # -------------------------------
 # SoilCarbonCalculator v4
