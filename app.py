@@ -35,7 +35,7 @@ div[data-testid="stMarkdownContainer"] p {font-size: 0.9rem;}
 """, unsafe_allow_html=True)
 
 st.title("🌱 SoilCarbonCalculator - Tier-2")
-st.caption("Versione con calcolo corretto dei residui e tabella riepilogativa dei terreni")
+st.caption("Versione con residui tabellari e calcolo automatico")
 
 # -------------------------------
 # INIZIALIZZAZIONE
@@ -54,17 +54,15 @@ if "settings" not in st.session_state:
 # FUNZIONI
 def reset_colture_form():
     st.session_state["colture_form"] = [
-        {"coltura": "Nessuna", "resa": 0.0, "retention_pct": 100.0,
-         "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25},
-        {"coltura": "Nessuna", "resa": 0.0, "retention_pct": 100.0,
-         "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25}
+        {"coltura": "Nessuna", "resa": 0.0, "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25},
+        {"coltura": "Nessuna", "resa": 0.0, "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25}
     ]
 
 def tillage_multiplier(till_type):
     mapping = {"No-till": 1.10, "Minima lavorazione": 1.05, "Convenzionale": 1.00}
     return mapping.get(till_type, 1.0)
 
-# Tabelle HI e frazione C
+# Tabelle HI, frazione C e residui lasciati
 hi_table = {
     "Mais granella": 0.50, "Mais trinciato": 1.00, "Frumento": 0.45,
     "Frumento trinciato": 1.00, "Orzo": 0.45, "Sorgo da granella": 0.50,
@@ -74,6 +72,15 @@ hi_table = {
 }
 c_percent_table = {k: 0.45 for k in hi_table}
 c_percent_table["Fieno/erba"] = 0.40
+
+residui_tabellari = {
+    "Mais granella": 0.50, "Mais trinciato": 1.00, "Frumento": 0.40,
+    "Frumento trinciato": 1.00, "Orzo": 0.40, "Sorgo da granella": 0.50,
+    "Sorgo trinciato": 1.00, "Avena": 0.40, "Erba medica": 1.00,
+    "Fieno/erba": 1.00, "Soia": 0.40, "Girasole": 0.45,
+    "Colza": 0.45, "Triticale": 0.45
+}
+
 colture_disponibili = ["Nessuna"] + list(hi_table.keys())
 
 # -------------------------------
@@ -115,15 +122,13 @@ with col_input:
             st.markdown(f"**Coltura {i+1}**")
             entry["coltura"] = st.selectbox(f"Tipo coltura {i+1}", colture_disponibili, key=f"colt_{i}")
             entry["resa"] = st.number_input(f"Resa (t/ha) {i+1}", 0.0, 100.0, entry.get("resa", 0.0), step=0.1, key=f"resa_{i}")
-            entry["retention_pct"] = st.slider(f"Residui lasciati (%) {i+1}", 0.0, 100.0, entry.get("retention_pct", 100.0), 5.0, key=f"ret_{i}")
             entry["tillage"] = st.selectbox(f"Lavorazione {i+1}", ["Convenzionale", "Minima lavorazione", "No-till"], key=f"till_{i}")
             entry["manure_t_ha"] = st.number_input(f"Letame/compost (t/ha) {i+1}", 0.0, 100.0, entry.get("manure_t_ha", 0.0), step=0.1, key=f"man_{i}")
             st.markdown("---")
 
         if st.button("➕ Aggiungi altra coltura"):
             st.session_state["colture_form"].append(
-                {"coltura": "Nessuna", "resa": 0.0, "retention_pct": 100.0,
-                 "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25}
+                {"coltura": "Nessuna", "resa": 0.0, "tillage": "Convenzionale", "manure_t_ha": 0.0, "manure_c_pct": 0.25}
             )
 
         if st.button("💾 Salva colture"):
@@ -136,7 +141,7 @@ with col_input:
                 st.warning("Inserisci almeno una coltura valida.")
 
 with col_output:
-    st.subheader("📊 Risultati annuali")
+    st.subheader("📊 Riepilogo terreni e CO₂")
 
     risultati = []
     totale_CO2_azienda = 0.0
@@ -147,7 +152,6 @@ with col_output:
             continue
 
         superficie = dati["superficie"]
-        totale_delta_soc_per_ha = 0.0
         totale_delta_co2_per_ha = 0.0
 
         for c in dati["colture"]:
@@ -157,14 +161,13 @@ with col_output:
                 continue
             hi = hi_table[nome]
             f_C = c_percent_table.get(nome, st.session_state["settings"]["f_C_default"])
-            retention = c["retention_pct"] / 100
+            retention = residui_tabellari.get(nome, 1.0)
             till = c["tillage"]
             man_t = c["manure_t_ha"]
             man_c_pct = c.get("manure_c_pct", 0.25)
 
-            # 🔹 Calcolo corretto residui
-            residui_t_ha = resa * ((1 - hi) / hi)
-            c_residui = residui_t_ha * f_C * retention
+            residui_t_ha = resa * ((1 - hi)/hi) * retention
+            c_residui = residui_t_ha * f_C
             h_res = st.session_state["settings"]["h_res_default"] * tillage_multiplier(till)
             c_hum = c_residui * h_res
             c_man = man_t * man_c_pct * st.session_state["settings"]["h_man_default"]
@@ -172,7 +175,6 @@ with col_output:
             delta_soc = c_hum + c_man
             delta_co2 = delta_soc * (44.0 / 12.0)
 
-            totale_delta_soc_per_ha += delta_soc
             totale_delta_co2_per_ha += delta_co2
 
         totale_CO2_ha = totale_delta_co2_per_ha
@@ -200,6 +202,4 @@ with col_output:
         """, unsafe_allow_html=True)
     else:
         st.info("Inserisci almeno una coltura salvata per visualizzare la tabella dei risultati.")
-
-        st.info("Inserisci e salva almeno una coltura per vedere i risultati.")
 
