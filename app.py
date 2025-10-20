@@ -1,5 +1,6 @@
 # app.py
 import streamlit as st
+import pandas as pd
 from datetime import datetime
 
 st.set_page_config(page_title="SoilCarbonCalculator - Tier2", page_icon="🌱", layout="wide")
@@ -8,14 +9,11 @@ st.set_page_config(page_title="SoilCarbonCalculator - Tier2", page_icon="🌱", 
 # STILE PERSONALIZZATO
 st.markdown("""
 <style>
-/* Riduce dimensione testo nei form */
 h1, h2, h3, h4, h5 {font-family: 'Arial';}
 section[data-testid="stSidebar"] div {font-size: 0.9rem;}
 div[data-testid="stMarkdownContainer"] p {font-size: 0.9rem;}
 .stNumberInput label, .stSelectbox label, .stSlider label {font-size: 0.9rem;}
 .stButton button {font-size: 0.9rem; padding: 0.3rem 0.8rem;}
-
-/* Stile sezione risultati */
 .result-box {
     background-color: #f0fdf7;
     border: 2px solid #0a662a;
@@ -37,7 +35,7 @@ div[data-testid="stMarkdownContainer"] p {font-size: 0.9rem;}
 """, unsafe_allow_html=True)
 
 st.title("🌱 SoilCarbonCalculator - Tier-2")
-st.caption("Versione ottimizzata per visualizzazione compatta e risultati evidenziati")
+st.caption("Versione con calcolo corretto dei residui e tabella riepilogativa dei terreni")
 
 # -------------------------------
 # INIZIALIZZAZIONE
@@ -49,8 +47,7 @@ if "settings" not in st.session_state:
     st.session_state["settings"] = {
         "f_C_default": 0.45,
         "h_res_default": 0.20,
-        "h_man_default": 0.35,
-        "decay_extra": 0.0
+        "h_man_default": 0.35
     }
 
 # -------------------------------
@@ -95,7 +92,7 @@ with col_input:
     terreni_anno = st.session_state["annate"][anno_selezionato]
 
     nuovo_terreno = st.text_input("Nome nuovo terreno")
-    superficie_input = st.number_input("Superficie (ha)", min_value=0.1, max_value=10000.0, value=1.0, step=0.1)
+    superficie_input = st.number_input("Superficie (ha)", 0.1, 10000.0, 1.0, 0.1)
     if st.button("+ Aggiungi terreno"):
         if not nuovo_terreno.strip():
             st.error("Inserisci un nome valido per il terreno.")
@@ -141,12 +138,19 @@ with col_input:
 with col_output:
     st.subheader("📊 Risultati annuali")
 
-    if terreno_selezionato and terreni_anno.get(terreno_selezionato, {}).get("colture"):
-        superficie = terreni_anno[terreno_selezionato]["superficie"]
+    risultati = []
+    totale_CO2_azienda = 0.0
+    totale_ha = 0.0
+
+    for terreno, dati in terreni_anno.items():
+        if not dati["colture"]:
+            continue
+
+        superficie = dati["superficie"]
         totale_delta_soc_per_ha = 0.0
         totale_delta_co2_per_ha = 0.0
 
-        for c in terreni_anno[terreno_selezionato]["colture"]:
+        for c in dati["colture"]:
             nome = c["coltura"]
             resa = c["resa"]
             if nome not in hi_table or resa <= 0:
@@ -158,8 +162,8 @@ with col_output:
             man_t = c["manure_t_ha"]
             man_c_pct = c.get("manure_c_pct", 0.25)
 
-            biomassa_totale = resa / hi if hi > 0 else 0
-            residui_t_ha = max(0.0, biomassa_totale - resa)
+            # 🔹 Calcolo corretto residui
+            residui_t_ha = resa * ((1 - hi) / hi)
             c_residui = residui_t_ha * f_C * retention
             h_res = st.session_state["settings"]["h_res_default"] * tillage_multiplier(till)
             c_hum = c_residui * h_res
@@ -174,13 +178,28 @@ with col_output:
         totale_CO2_ha = totale_delta_co2_per_ha
         totale_CO2_terreno = totale_CO2_ha * superficie
 
+        risultati.append({
+            "Terreno": terreno,
+            "Superficie (ha)": superficie,
+            "ΔCO₂ (t/ha)": round(totale_CO2_ha, 3),
+            "Totale CO₂ (t)": round(totale_CO2_terreno, 3)
+        })
+
+        totale_CO2_azienda += totale_CO2_terreno
+        totale_ha += superficie
+
+    if risultati:
+        df = pd.DataFrame(risultati)
+        st.dataframe(df, hide_index=True, use_container_width=True)
         st.markdown(f"""
         <div class="result-box">
-            <p class="result-title">Totale stimato per ettaro: {totale_CO2_ha:.3f} t CO₂/ha</p>
-            <p class="result-sub">Superficie: {superficie:.2f} ha</p>
-            <p class="result-sub">Totale per il terreno: <b>{totale_CO2_terreno:.3f} t CO₂</b></p>
+            <p class="result-title">Totale aziendale CO₂ stoccata</p>
+            <p class="result-sub">Superficie totale: <b>{totale_ha:.2f} ha</b></p>
+            <p class="result-sub">Totale CO₂: <b>{totale_CO2_azienda:.3f} t</b></p>
         </div>
         """, unsafe_allow_html=True)
     else:
+        st.info("Inserisci almeno una coltura salvata per visualizzare la tabella dei risultati.")
+
         st.info("Inserisci e salva almeno una coltura per vedere i risultati.")
 
